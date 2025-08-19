@@ -88,13 +88,11 @@ class InsuranceTrainer:
         tracer: trace.Tracer,
         source_of_truth: str,
         schema_name: str,
-        major_version: bool = True,
     ):
         self.session = session
         self.tracer = tracer
         self.source_of_truth = source_of_truth
         self.schema_name = schema_name
-        self.major_version = major_version
 
     def load_data(self) -> DataFrame:
         print("Loading data from source table: ", self.source_of_truth)
@@ -240,20 +238,14 @@ class InsuranceTrainer:
 
         version_list_string = model_list_filter["versions"].iloc[0]
         version_list = json.loads(version_list_string)
-        version_numbers = [float(s.replace("V", "")) for s in version_list]
+        version_numbers = [int(s.replace("V", "")) for s in version_list]
         model_last_version = max(version_numbers)
 
         if np.isnan(model_last_version):
-            model_new_version = "V1"
+            return "V1"
 
-        elif not np.isnan(model_last_version) and self.major_version:
-            model_new_version = round(model_last_version + 1, 2)
-            model_new_version = "V" + str(model_new_version)
-
-        else:
-            model_new_version = round(model_last_version + 0.1, 2)
-            model_new_version = "V" + str(model_new_version)
-
+        model_new_version = model_last_version + 1
+        model_new_version = "V" + str(model_new_version)
         return model_new_version
 
     def register_model(
@@ -264,7 +256,6 @@ class InsuranceTrainer:
         mse: float,
         schema_name: str,
         feature_column_names: list[str],
-        major_version: bool = True,
     ) -> None:
         print("Registering model in the registry")
         with self.tracer.start_as_current_span("model_registration"):
@@ -297,7 +288,7 @@ class InsuranceTrainer:
 
             session.sql(
                 f'alter model INSURANCE_CHARGES_PREDICTION set default_version = "{version_name}";'
-            )
+            ).collect()
 
     def run(self):
         with self.tracer.start_as_current_span("train_save_ins_model"):
@@ -334,7 +325,6 @@ class InsuranceTrainer:
                     mape=mape,
                     mse=mse,
                     schema_name=self.schema_name,
-                    major_version=self.major_version,
                     feature_column_names=feature_column_names,
                 )
             except Exception as e:

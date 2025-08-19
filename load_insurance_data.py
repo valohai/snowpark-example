@@ -2,7 +2,6 @@ import os
 import valohai
 import pandas as pd
 from snowflake.snowpark import Session
-from snowflake.snowpark.table import Table
 
 SNOWFLAKE_ACCOUNT = os.getenv("SNOWFLAKE_ACCOUNT")
 SNOWFLAKE_DATABASE = os.getenv("SNOWFLAKE_DATABASE")
@@ -56,16 +55,6 @@ def create_session(
 
     return session
 
-def export_table_to_csv(table: Table):
-    df = pd.DataFrame([r.as_dict() for r in table.collect()])
-    timestamp = pd.Timestamp.now().isoformat()
-    filename = f"{table.table_name}_{timestamp}.csv"
-    output = valohai.outputs().path(filename)
-    print(f"Writing data to {output}")
-    df.to_csv(output, index=False)
-    print(f"Data written to {output}")
-
-
 def main():
     db_name = valohai.parameters("db_name").value
     schema_name = valohai.parameters("schema_name").value
@@ -95,7 +84,7 @@ def main():
     cols = cols[:3] + cols[-1:] + cols[3:-1]
     insurance_df = insurance_df[cols]
 
-    source_of_truth_df = session.write_pandas(
+    session.write_pandas(
         insurance_df[:train_rows],
         table_name=train_db_name,  # SOURCE_OF_TRUTH
         database=db_name,
@@ -103,16 +92,13 @@ def main():
         auto_create_table=True,
     )
 
-    incoming_data_source_df = session.write_pandas(
+    session.write_pandas(
         insurance_df[train_rows:],
         table_name=incoming_data_db_name,  # INCOMING_DATA_SOURCE
         database=db_name,
         schema=schema_name,
         auto_create_table=True,
     )
-
-    export_table_to_csv(source_of_truth_df)
-    export_table_to_csv(incoming_data_source_df)
 
 if __name__ == "__main__":
     main()
