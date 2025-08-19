@@ -8,6 +8,7 @@ import json
 import snowflake.snowpark.types as T
 import snowflake.snowpark.functions as F
 import snowflake.ml.modeling.preprocessing as snowmlpp
+from valohai.paths import get_outputs_path
 
 from pandas import DataFrame as pd_DataFrame
 from opentelemetry import trace
@@ -15,6 +16,7 @@ from snowflake.snowpark import Session
 from snowflake import telemetry
 from snowflake.snowpark import DataFrame
 from snowflake.ml.registry import registry
+from snowflake.ml.model import ExportMode
 from snowflake.ml.modeling.pipeline import Pipeline
 from snowflake.ml.modeling.xgboost import XGBRegressor
 from snowflake.ml.modeling.model_selection import GridSearchCV
@@ -289,6 +291,8 @@ class InsuranceTrainer:
             session.sql(
                 f'alter model INSURANCE_CHARGES_PREDICTION set default_version = "{version_name}";'
             ).collect()
+            output_dir = get_outputs_path()
+            model_version.export(target_path=output_dir, export_mode=ExportMode.MODEL)
 
     def run(self):
         with self.tracer.start_as_current_span("train_save_ins_model"):

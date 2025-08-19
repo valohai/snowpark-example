@@ -11,6 +11,7 @@ In this example, we will run a Valohai pipeline that has 2 steps:
   - Use the data in `SOURCE_OF_TRUTH` to train and test a model to predict the insurance charges
   - Log the model to Snowflake's Model registry
 
+This example uses `snowflake-ml-python` for training the model, but it can also be easily replaced with other popular libraries as you have full control over the environment in Valohai.
 # Preparing the database in Snowflake
 
 ```sql
