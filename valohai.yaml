@@ -1,0 +1,84 @@
+- step:
+    name: snowflake-test-insurance-connection
+    image: python:3.12
+    command:
+      - cd snowflake
+      - pip install -r requirements.txt
+      - python -m test_insurance_connection
+
+- step:
+    name: snowflake-load-insurance-data
+    image: python:3.12
+    command:
+      - cd snowflake
+      - pip install -r requirements.txt
+      - python -m load_insurance_data {parameters}
+    inputs:
+    - name: data_csv
+      optional: false
+    parameters:
+      - name: db_name
+        optional: true
+        type: string
+      - name: schema_name
+        optional: true
+        type: string
+      - name: warehouse_name
+        optional: true
+        type: string
+      - name: role
+        optional: true
+        type: string
+      - name: train_db_name
+        default: SOURCE_OF_TRUTH
+        optional: true
+        type: string
+      - name: incoming_data_db_name
+        default: INCOMING_DATA_SOURCE
+        optional: true
+        type: string
+      - name: train_rows
+        default: 10000
+        optional: true
+        type: integer
+
+- step:
+    name: snowflake-train-and-save-model
+    image: python:3.12
+    command:
+      - cd snowflake
+      - pip install -r requirements.txt
+      - python -m train_and_save_model {parameters}
+    parameters:
+      - name: db_name
+        optional: true
+        type: string
+      - name: schema_name
+        optional: true
+        type: string
+      - name: warehouse_name
+        optional: true
+        type: string
+      - name: role
+        optional: true
+        type: string
+      - name: source_table
+        default: SOURCE_OF_TRUTH
+        optional: true
+        type: string
+
+- pipeline:
+    name: insurance-training-pipeline
+    nodes:
+      - name: load_data
+        type: execution
+        step: snowflake-load-insurance-data
+      - name: train
+        type: execution
+        step: snowflake-train-and-save-model
+    edges:
+      - [load_data.parameter.db_name, train.parameter.db_name]
+      - [load_data.parameter.schema_name, train.parameter.schema_name]
+      - [load_data.parameter.warehouse_name, train.parameter.warehouse_name]
+      - [load_data.parameter.role, train.parameter.role]
+      - [load_data.parameter.train_db_name, train.parameter.source_table]

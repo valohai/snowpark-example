@@ -1,0 +1,6 @@
+pandas
+snowflake-connector-python[pandas]
+snowflake-snowpark-python
+valohai-utils
+snowflake-ml-python
+snowflake-telemetry-python
