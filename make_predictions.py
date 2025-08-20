@@ -13,6 +13,7 @@ if __name__ == "__main__":
 
     streamdb_name = valohai.parameters("streamdb_name").value
     model_name = valohai.parameters("model_name").value
+    targetdb_name = valohai.parameters("target_db_name").value
 
     session = create_session(role, db_name, schema_name, warehouse_name)
     if session is None:
@@ -34,4 +35,4 @@ if __name__ == "__main__":
     )
     timestamp = dt.datetime.now().isoformat()
     output_path = valohai.outputs().path(f"predictions_{timestamp}.csv")
-    predictor.run(model_name=model_name, result_target_db=streamdb_name, export_path=output_path)
+    predictor.run(model_name=model_name, result_target_db=targetdb_name, export_path=output_path)

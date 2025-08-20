@@ -77,14 +77,14 @@ class InsurancePredictor:
         export_path: str | None = None,
     ) -> MergeResult:
         with self.tracer.start_as_current_span("write_predictions"):
+            target = self.session.table(target_db_name)
             cols_to_update = {
                 col: predict_results[col]
-                for col in self.session.table(target_db_name).columns
+                for col in target.columns
                 if "METADATA_UPDATED_AT" not in col
             }
             metadata_col_to_update = {"METADATA_UPDATED_AT": F.current_timestamp()}
             updates = {**cols_to_update, **metadata_col_to_update}
-            target = self.session.table(target_db_name)
             result = target.merge(
                 predict_results,
                 target["METADATA$ROW_ID"] == predict_results["METADATA$ROW_ID"],
@@ -111,7 +111,11 @@ class InsurancePredictor:
             df = self.standardize_values(df)
             model_version = self.load_model_from_registry(model_name)
             results = self.run_predict(df, model_version)
-            self.write_predictions(results, result_target_db, export_path)
+            self.write_predictions(
+                predict_results=results,
+                target_db_name=result_target_db,
+                export_path=export_path,
+            )
 
         except Exception as e:
             telemetry.add_event(

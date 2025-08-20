@@ -95,6 +95,10 @@
         default: INSURANCE_CHARGES_PREDICTION
         optional: true
         type: string
+      - name: target_db_name
+        default: INSURANCE_GOLD
+        optional: true
+        type: string
 
 - step:
     name: snowflake-simulate-streamed-data
