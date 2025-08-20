@@ -2,7 +2,6 @@
     name: snowflake-test-insurance-connection
     image: python:3.12
     command:
-      - cd snowflake
       - pip install -r requirements.txt
       - python -m test_insurance_connection
 
@@ -10,7 +9,6 @@
     name: snowflake-load-insurance-data
     image: python:3.12
     command:
-      - cd snowflake
       - pip install -r requirements.txt
       - python -m load_insurance_data {parameters}
     inputs:
@@ -46,7 +44,6 @@
     name: snowflake-train-and-save-model
     image: python:3.12
     command:
-      - cd snowflake
       - pip install -r requirements.txt
       - python -m train_and_save_model {parameters}
     parameters:
@@ -66,6 +63,71 @@
         default: SOURCE_OF_TRUTH
         optional: true
         type: string
+      - name: model_name
+        default: INSURANCE_CHARGES_PREDICTION
+        optional: true
+        type: string
+
+- step:
+    name: snowflake-make-predictions
+    image: python:3.12
+    command:
+      - pip install -r requirements.txt
+      - python -m make_predictions {parameters}
+    parameters:
+      - name: db_name
+        optional: true
+        type: string
+      - name: schema_name
+        optional: true
+        type: string
+      - name: warehouse_name
+        optional: true
+        type: string
+      - name: role
+        optional: true
+        type: string
+      - name: streamdb_name
+        default: STREAM_ON_LANDING
+        optional: true
+        type: string
+      - name: model_name
+        default: INSURANCE_CHARGES_PREDICTION
+        optional: true
+        type: string
+
+- step:
+    name: snowflake-simulate-streamed-data
+    image: python:3.12
+    command:
+      - pip install -r requirements.txt
+      - python -m simulate_streamed_data {parameters}
+    parameters:
+      - name: db_name
+        optional: true
+        type: string
+      - name: schema_name
+        optional: true
+        type: string
+      - name: warehouse_name
+        optional: true
+        type: string
+      - name: role
+        optional: true
+        type: string
+      - name: incoming_data_db_name
+        default: INCOMING_DATA_SOURCE
+        optional: true
+        type: string
+      - name: number_of_rows
+        default: 50000
+        optional: true
+        type: integer
+      - name: landing_table_name
+        default: LANDING_TABLE
+        optional: true
+        type: string
+
 
 - pipeline:
     name: insurance-training-pipeline
@@ -76,9 +138,23 @@
       - name: train
         type: execution
         step: snowflake-train-and-save-model
+      - name: pretend_to_stream_data
+        type: execution
+        step: snowflake-simulate-streamed-data
+      - name: make_predictions
+        type: execution
+        step: snowflake-make-predictions
     edges:
       - [load_data.parameter.db_name, train.parameter.db_name]
       - [load_data.parameter.schema_name, train.parameter.schema_name]
       - [load_data.parameter.warehouse_name, train.parameter.warehouse_name]
       - [load_data.parameter.role, train.parameter.role]
       - [load_data.parameter.train_db_name, train.parameter.source_table]
+      - [train.parameter.db_name, pretend_to_stream_data.parameter.db_name]
+      - [train.parameter.schema_name, pretend_to_stream_data.parameter.schema_name]
+      - [train.parameter.warehouse_name, pretend_to_stream_data.parameter.warehouse_name]
+      - [train.parameter.role, pretend_to_stream_data.parameter.role]
+      - [pretend_to_stream_data.parameter.db_name, make_predictions.parameter.db_name]
+      - [pretend_to_stream_data.parameter.schema_name, make_predictions.parameter.schema_name]
+      - [pretend_to_stream_data.parameter.warehouse_name, make_predictions.parameter.warehouse_name]
+      - [pretend_to_stream_data.parameter.role, make_predictions.parameter.role]

@@ -1,0 +1,284 @@
+
+import traceback
+import numpy as np
+import json
+
+import snowflake.snowpark.types as T
+import snowflake.snowpark.functions as F
+import snowflake.ml.modeling.preprocessing as snowmlpp
+from valohai.paths import get_outputs_path
+
+from pandas import DataFrame as pd_DataFrame
+from opentelemetry import trace
+from snowflake.snowpark import Session
+from snowflake import telemetry
+from snowflake.snowpark import DataFrame
+from snowflake.ml.registry import registry
+from snowflake.ml.model import ExportMode
+from snowflake.ml.modeling.pipeline import Pipeline
+from snowflake.ml.modeling.xgboost import XGBRegressor
+from snowflake.ml.modeling.model_selection import GridSearchCV
+from snowflake.ml.modeling.metrics import (
+    mean_absolute_percentage_error,
+    mean_squared_error,
+)
+
+
+class InsuranceTrainer:
+    LABEL_COLUMNS = ["CHARGES"]
+    OUTPUT_COLUMNS = ["PREDICTED_CHARGES"]
+
+    def __init__(
+        self,
+        session: Session,
+        tracer: trace.Tracer,
+        source_of_truth: str,
+        schema_name: str,
+    ):
+        self.session = session
+        self.tracer = tracer
+        self.source_of_truth = source_of_truth
+        self.schema_name = schema_name
+
+    def load_data(self) -> DataFrame:
+        print("Loading data from source table: ", self.source_of_truth)
+        with self.tracer.start_as_current_span("data_loading"):
+            df = self.session.table(self.source_of_truth).limit(10000)
+            telemetry.set_span_attribute("data.row_count", df.count())
+            print("Loaded data:")
+            df.show()
+            return df
+
+    def get_feature_column_names(self, df: DataFrame) -> list[str]:
+        return [i for i in df.schema.names if i not in self.LABEL_COLUMNS]
+
+    def get_ohe_columns(self, df: DataFrame) -> list[str]:
+        categorical_types = [T.StringType]
+        cols_to_ohe = [
+            col.name
+            for col in df.schema.fields
+            if (type(col.datatype) in categorical_types)
+        ]
+        return cols_to_ohe
+
+    def get_ohe_cols_output(self, cols_to_ohe: list[str]) -> list[str]:
+        return [col + "_OHE" for col in cols_to_ohe]
+
+    def engineer_features(
+        self,
+        df: DataFrame,
+        cols_to_ohe: list[str],
+    ) -> DataFrame:
+        print("Starting feature engineering on columns: ", cols_to_ohe)
+        with self.tracer.start_as_current_span("feature_engineering"):
+
+            def fix_values(columnn):
+                return F.upper(F.regexp_replace(F.col(columnn), "[^a-zA-Z0-9]+", "_"))
+
+            for col in cols_to_ohe:
+                df = df.na.fill("NONE", subset=col)
+                df = df.withColumn(col, fix_values(col))
+            telemetry.add_event("feature_engineering_complete")
+            print("Feature engineering completed:")
+            df.show()
+            return df
+
+    def define_pipeline(
+        self,
+        cols_to_ohe: list[str],
+        ohe_cols_output: list[str],
+    ) -> Pipeline:
+        print("Defining pipeline with OHE columns: ", ohe_cols_output)
+        with self.tracer.start_as_current_span("define_pipeline"):
+            # Define the pipeline
+            pipe = Pipeline(
+                steps=[
+                    (
+                        "ohe",
+                        snowmlpp.OneHotEncoder(
+                            input_cols=cols_to_ohe,
+                            output_cols=ohe_cols_output,
+                            drop_input_cols=True,
+                        ),
+                    ),
+                    (
+                        "grid_search_reg",
+                        GridSearchCV(
+                            estimator=XGBRegressor(),
+                            param_grid={
+                                "n_estimators": [50, 100, 200],
+                                "learning_rate": [0.01, 0.1, 0.5],
+                            },
+                            n_jobs=-1,
+                            scoring="neg_mean_absolute_percentage_error",
+                            input_cols=None,
+                            label_cols=self.LABEL_COLUMNS,
+                            output_cols=self.OUTPUT_COLUMNS,
+                            drop_input_cols=True,
+                        ),
+                    ),
+                ]
+            )
+            return pipe
+
+    def train_test_split(self, df: DataFrame) -> tuple[DataFrame, DataFrame]:
+        print("Splitting data into train and test sets")
+        with self.tracer.start_as_current_span("train_test_split"):
+            return df.randomSplit([0.8, 0.2], seed=42)
+
+    def fit_pipeline(self, pipe: Pipeline, train_df: pd_DataFrame) -> Pipeline:
+        print("Fitting pipeline to training data")
+        train_df.head(10)
+        with self.tracer.start_as_current_span("fit_pipeline"):
+            try:
+                pipe.fit(train_df)
+                telemetry.set_span_attribute("training.param_grid", "Fitting done")
+                return pipe
+            except Exception as e:
+                print("Error during pipeline fitting: ", e)
+                for step in pipe.steps:
+                    print(f"Step: {step[0]}")
+                    print(f"  - Type: {type(step[1])}")
+                    print(f"  - Input cols: {step[1].input_cols}")
+                raise e
+
+    def evaluate_model(
+        self,
+        pipe: Pipeline,
+        test_df: DataFrame,
+    ) -> tuple[float, float]:
+        print("Evaluating model on test data")
+        with self.tracer.start_as_current_span("model_evaluation"):
+            results = pipe.predict(test_df)
+
+            # Calculate MAPE
+            mape = mean_absolute_percentage_error(
+                df=results,
+                y_true_col_names=self.LABEL_COLUMNS,
+                y_pred_col_names=self.OUTPUT_COLUMNS,
+            )
+            print("Model evaluation completed with MAPE: %f", mape)
+
+            # Calculate MSE
+            mse = mean_squared_error(
+                df=results,
+                y_true_col_names=self.LABEL_COLUMNS,
+                y_pred_col_names=self.OUTPUT_COLUMNS,
+            )
+            print("Model evaluation completed with MSE: ", mse)
+            telemetry.set_span_attribute("model.mape", mape)
+            telemetry.set_span_attribute("model.mse", mse)
+            return mape, mse
+
+    def set_model_version(self, registry_object: registry.Registry, model_name: str):
+        # See what we've logged so far, dynamically set the model version
+        model_list = registry_object.show_models()
+
+        if len(model_list) == 0:
+            return "V1"
+
+        model_list_filter = model_list[model_list["name"] == model_name]
+
+        if len(model_list_filter) == 0:
+            return "V1"
+
+        version_list_string = model_list_filter["versions"].iloc[0]
+        version_list = json.loads(version_list_string)
+        version_numbers = [int(s.replace("V", "")) for s in version_list]
+        model_last_version = max(version_numbers)
+
+        if np.isnan(model_last_version):
+            return "V1"
+
+        model_new_version = model_last_version + 1
+        model_new_version = "V" + str(model_new_version)
+        return model_new_version
+
+    def register_model(
+        self,
+        train_df: DataFrame,
+        pipe: Pipeline,
+        mape: float,
+        mse: float,
+        schema_name: str,
+        feature_column_names: list[str],
+        model_name: str,
+    ) -> None:
+        print("Registering model in the registry")
+        with self.tracer.start_as_current_span("model_registration"):
+            # Create model regisry object
+
+            model_registry = registry.Registry(
+                session=self.session,
+                database_name=self.session.get_current_database(),
+                schema_name=schema_name,
+            )
+
+            # Save model to registry
+            X = train_df.select(feature_column_names).limit(100)
+
+            version_name = self.set_model_version(
+                model_registry,
+                model_name,
+            )
+            model_version = model_registry.log_model(
+                model=pipe,
+                model_name=model_name,
+                version_name=version_name,
+                sample_input_data=X,
+            )
+
+            model_version.set_metric(metric_name="mean_abs_pct_err", value=mape)
+            model_version.set_metric(metric_name="mean_sq_err", value=mse)
+            telemetry.add_event("model_registered", {"version": version_name})
+
+            self.session.sql(
+                f'alter model {model_name} set default_version = "{version_name}";'
+            ).collect()
+            output_dir = get_outputs_path()
+            model_version.export(target_path=output_dir, export_mode=ExportMode.MODEL)
+
+    def run(self, model_name: str):
+        with self.tracer.start_as_current_span("train_save_ins_model"):
+            try:
+                telemetry.set_span_attribute(
+                    "model.name",
+                    model_name,
+                )
+                df = self.load_data()
+                feature_column_names = self.get_feature_column_names(df)
+                cols_to_ohe = self.get_ohe_columns(df)
+                ohe_cols_output = self.get_ohe_cols_output(cols_to_ohe)
+
+                df = self.engineer_features(df, cols_to_ohe)
+                pipe = self.define_pipeline(
+                    cols_to_ohe,
+                    ohe_cols_output,
+                )
+
+                train_df, test_df = self.train_test_split(df)
+
+                # Force conversion to pandas DataFrame for fitting
+                # otherwise, Snowpark won't use the local environment to fit
+                # and will try to fit on the Snowflake cluster, which we would
+                # have to sort out the dependencies for.
+                local_train_df = train_df.to_pandas()
+
+                fit_pipe = self.fit_pipeline(pipe, local_train_df)
+                mape, mse = self.evaluate_model(fit_pipe, test_df)
+
+                self.register_model(
+                    train_df=train_df,
+                    pipe=fit_pipe,
+                    mape=mape,
+                    mse=mse,
+                    schema_name=self.schema_name,
+                    feature_column_names=feature_column_names,
+                    model_name=model_name,
+                )
+            except Exception as e:
+                telemetry.add_event(
+                    "pipeline_failure",
+                    {"error": str(e), "stack_trace": traceback.format_exc()},
+                )
+                raise e

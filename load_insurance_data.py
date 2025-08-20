@@ -1,59 +1,9 @@
-import os
 import valohai
 import pandas as pd
-from snowflake.snowpark import Session
 
-SNOWFLAKE_ACCOUNT = os.getenv("SNOWFLAKE_ACCOUNT")
-SNOWFLAKE_DATABASE = os.getenv("SNOWFLAKE_DATABASE")
-SNOWFLAKE_SCHEMA = os.getenv("SNOWFLAKE_SCHEMA")
-SNOWFLAKE_HOST = os.getenv("SNOWFLAKE_HOST")
-SNOWFLAKE_ROLE = os.getenv("SNOWFLAKE_ROLE")
-SNOWFLAKE_WAREHOUSE = os.getenv("SNOWFLAKE_WAREHOUSE")
+from utils.connection import create_session
+from utils.data_loader import load_data
 
-
-def get_login_token() -> str:
-    try:
-        with open("/snowflake/session/token", "r") as f:
-            return f.read()
-    except Exception as e:
-        print(f"Error reading token file: {e}")
-        return None
-
-
-def get_session_config() -> dict[str, str]:
-    configs = {
-        "account": SNOWFLAKE_ACCOUNT,
-        "database": SNOWFLAKE_DATABASE,
-        "schema": SNOWFLAKE_SCHEMA,
-        "host": SNOWFLAKE_HOST,
-        "token": get_login_token(),
-        "authenticator": "oauth",
-        "role": SNOWFLAKE_ROLE,
-    }
-
-    return {k: v for k, v in configs.items() if v is not None}
-
-
-def create_session(
-    role: str | None = None,
-    db_name: str | None = None,
-    schema_name: str | None = None,
-    warehouse_name: str | None = None,
-) -> Session | None:
-    session = Session.builder.configs(get_session_config()).create()
-    if role and role != SNOWFLAKE_ROLE:
-        session.use_role(role)
-
-    if db_name and db_name != SNOWFLAKE_DATABASE:
-        session.use_database(db_name)
-
-    if schema_name and schema_name != SNOWFLAKE_SCHEMA:
-        session.use_schema(schema_name)
-
-    if warehouse_name and warehouse_name != SNOWFLAKE_WAREHOUSE:
-        session.use_warehouse(warehouse_name)
-
-    return session
 
 def main():
     db_name = valohai.parameters("db_name").value
@@ -74,31 +24,23 @@ def main():
     print("Schema                      : {}".format(session.get_current_schema()))
     print("Warehouse                   : {}".format(session.get_current_warehouse()))
 
-    # Load full 1M dataset into dataframe
-    insurance_df = pd.read_csv(data_csv)
-    # Capitalize column names
-    insurance_df.columns = insurance_df.columns.str.upper()
-
-    # Rearrange columns to fit target schema
-    cols = insurance_df.columns.tolist()
-    cols = cols[:3] + cols[-1:] + cols[3:-1]
-    insurance_df = insurance_df[cols]
-
-    session.write_pandas(
-        insurance_df[:train_rows],
-        table_name=train_db_name,  # SOURCE_OF_TRUTH
-        database=db_name,
-        schema=schema_name,
-        auto_create_table=True,
+    train_df, incoming_df = load_data(
+        session,
+        csv_path=data_csv,
+        train_rows=train_rows,
+        train_db_name=train_db_name,
+        db_name=db_name,
+        schema_name=schema_name,
+        incoming_data_db_name=incoming_data_db_name,
+        as_new=True,  # Overwrite existing tables
     )
 
-    session.write_pandas(
-        insurance_df[train_rows:],
-        table_name=incoming_data_db_name,  # INCOMING_DATA_SOURCE
-        database=db_name,
-        schema=schema_name,
-        auto_create_table=True,
-    )
+    timestamp = pd.Timestamp.now().isoformat()
+    train_df_output = valohai.outputs().path(f"train_df_{timestamp}.csv")
+    train_df.to_csv(train_df_output, index=False)
+
+    incoming_df_output = valohai.outputs().path(f"incoming_df_{timestamp}.csv")
+    incoming_df.to_csv(incoming_df_output, index=False)
 
 if __name__ == "__main__":
     main()
