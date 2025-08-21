@@ -132,6 +132,36 @@
         optional: true
         type: string
 
+- step:
+    name: snowflake-deploy-streamlit-app
+    image: python:3.12
+    command:
+      - pip install -r requirements.txt
+      - python -m deploy_streamlit_app {parameters}
+    parameters:
+      - name: db_name
+        optional: true
+        type: string
+      - name: schema_name
+        optional: true
+        type: string
+      - name: warehouse_name
+        optional: true
+        type: string
+      - name: role
+        optional: true
+        type: string
+      - name: streamlit_image
+        optional: false
+        type: string
+      - name: compute_pool_name
+        optional: false
+        type: string
+      - name: service_name
+        default: InsuranceStreamlitApp
+        optional: true
+        type: string
+
 
 - pipeline:
     name: insurance-training-pipeline
