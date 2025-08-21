@@ -178,6 +178,9 @@
       - name: make_predictions
         type: execution
         step: snowflake-make-predictions
+      - name: deploy_streamlit_app
+        type: execution
+        step: snowflake-deploy-streamlit-app
     edges:
       - [load_data.parameter.db_name, train.parameter.db_name]
       - [load_data.parameter.schema_name, train.parameter.schema_name]
@@ -192,3 +195,7 @@
       - [pretend_to_stream_data.parameter.schema_name, make_predictions.parameter.schema_name]
       - [pretend_to_stream_data.parameter.warehouse_name, make_predictions.parameter.warehouse_name]
       - [pretend_to_stream_data.parameter.role, make_predictions.parameter.role]
+      - [make_predictions.parameter.db_name, deploy_streamlit_app.parameter.db_name]
+      - [make_predictions.parameter.schema_name, deploy_streamlit_app.parameter.schema_name]
+      - [make_predictions.parameter.warehouse_name, deploy_streamlit_app.parameter.warehouse_name]
+      - [make_predictions.parameter.role, deploy_streamlit_app.parameter.role]

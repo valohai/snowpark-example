@@ -4,6 +4,7 @@ import time
 import valohai
 from snowflake.core import Root, CreateMode
 from snowflake.core.service import Service, ServiceSpec, ServiceResource
+from snowflake.core.exceptions import ConflictError
 
 from utils.connection import create_session
 
@@ -61,16 +62,24 @@ if __name__ == "__main__":
         public: true
     """
     schema = root.databases[db_name].schemas[schema_name]
-    insurance_service = schema.services.create(
-        Service(
-            name=service_name,
-            compute_pool=compute_pool_name,
-            spec=ServiceSpec(specification),
-            min_instances=1,
-            max_instances=1,
-        ),
-        mode=CreateMode.if_not_exists,
-    )
+    try:
+        insurance_service = schema.services.create(
+            Service(
+                name=service_name,
+                compute_pool=compute_pool_name,
+                spec=ServiceSpec(specification),
+                min_instances=1,
+                max_instances=1,
+            ),
+            mode=CreateMode.error_if_exists,
+        )
+    except ConflictError:
+        print(f"Service {service_name} already exists, using the existing one.")
+        insurance_service = schema.services[service_name]
+        session.use_database(db_name)
+        session.use_schema(schema_name)
+        session.use_warehouse(warehouse_name)
+        session.sql(f"ALTER SERVICE {service_name} RESUME").collect()
 
     public_url = get_ingress_for_endpoint(insurance_service, "insurance")
     print(f"https://{public_url}/")
