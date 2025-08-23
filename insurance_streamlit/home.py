@@ -1,36 +1,7 @@
-
-import os
-
 import streamlit as st
-from snowflake.snowpark import Session
 from snowflake.ml.registry import registry
 
-
-@st.cache_resource()
-def get_login_token() -> str:
-    try:
-        with open("/snowflake/session/token", "r") as f:
-            return f.read()
-    except Exception as e:
-        print(f"Error reading token file: {e}")
-        return None
-
-
-@st.cache_resource()
-def connect_to_snowflake() -> Session:
-    configs = {
-        "account": os.getenv("SNOWFLAKE_ACCOUNT"),
-        "database": os.getenv("SNOWFLAKE_DATABASE"),
-        "schema": os.getenv("SNOWFLAKE_SCHEMA"),
-        "host": os.getenv("SNOWFLAKE_HOST"),
-        "token": get_login_token(),
-        "authenticator": "oauth",
-        "role": os.getenv("SNOWFLAKE_ROLE"),
-        "warehouse": os.getenv("SNOWFLAKE_WAREHOUSE"),
-    }
-    configs = {k: v for k, v in configs.items() if v is not None}
-    return Session.builder.configs(configs).create()
-
+from utils.cached import connect_to_snowflake
 
 session = connect_to_snowflake()
 

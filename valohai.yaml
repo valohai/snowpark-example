@@ -216,10 +216,6 @@
       - [load_data.parameter.warehouse_name, train.parameter.warehouse_name]
       - [load_data.parameter.role, train.parameter.role]
       - [load_data.parameter.train_db_name, train.parameter.source_table]
-      - [train.parameter.db_name, pretend_to_stream_data.parameter.db_name]
-      - [train.parameter.schema_name, pretend_to_stream_data.parameter.schema_name]
-      - [train.parameter.warehouse_name, pretend_to_stream_data.parameter.warehouse_name]
-      - [train.parameter.role, pretend_to_stream_data.parameter.role]
 
 
 - pipeline:

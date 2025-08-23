@@ -1,103 +1,77 @@
-import json
-from datetime import datetime
 import streamlit as st
+from snowflake.ml.registry import registry
+
+from utils.cached import get_model_metric, get_model_versions, get_models_list, parse_model_details
+
 
 # Create model registry
-model_registry = st.session_state.model_registry
+model_registry: registry.Registry = st.session_state.model_registry
+
 
 st.title("Model Catalog")
 st.write("This page allows the user to view various aspects of the models saved in the model registry.\
          Select a model to see the available versions.")
 
+# Get models list (cached)
+models_df_main = get_models_list(model_registry)
 
 # Select model
-if model_name := st.selectbox("Model", model_registry.show_models().name):
-    st.write(model_registry.get_model(model_name).show_versions())
-    
+model_name = st.selectbox("Model", models_df_main.name if hasattr(models_df_main, 'name') else [])
+
+
+# Select model
+if model_name:
+    versions_df = get_model_versions(model_name, model_registry)
+    st.write(versions_df)
+
     st.subheader('Select a version to view more details')
-    version = st.selectbox("Version", model_registry.get_model(model_name).show_versions().name)
+    version = st.selectbox("Version", versions_df.name if hasattr(versions_df, 'name') else [])
 
+    if version:
+        # Create 2 columns
+        col1, col2, col3 = st.columns(3)
 
+        model_details = parse_model_details(versions_df, version)
 
-version = f'{version}'
-print(version)
-# Create 2 columns
-col1, col2, col3 = st.columns(3)
-
-# Get DF of available models
-models_df = model_registry.get_model('INSURANCE_CHARGES_PREDICTION').show_versions()
-
-######## Write Model stats
-col1.subheader("Stats")
-
-# Error Metric
-try:
-    col1.write("**MAPE:** " + str(round(model_registry.get_model(model_name).version((f'"{version}"')).get_metric('mean_abs_pct_err'),4)))
-except Exception as e:
-    col1.write(f'**MAPE:** Not available{e}')
-
-try:
-    model_date = str(models_df.loc[models_df['name'] == version, 'created_on'].iloc[0])
-    date_object = datetime.strptime(model_date, "%Y-%m-%d %H:%M:%S.%f%z")
-except Exception as e:
-    col1.write(f'**Created on:** Not available {e}')
-
-# Date created
-col1.write(f'**Created on:** {date_object.strftime("%B %d, %Y %H:%M:%S")}')
-
-
-
-# Write the expected inputs
-
-col2.subheader("Expected Inputs")
-
-try:
-    # Access the user_data column of the dataframe and turn into a json object
-    user_data_json = json.loads(models_df.loc[models_df['name'] == version, 'user_data'].iloc[0])
-    # Input features
-    EXPECTED_MODEL_INPUTS = []
-
-    # Access the function where name == 'predict'
-    predict_function = next((func for func in user_data_json['snowpark_ml_data']['functions'] if func['name'] == 'PREDICT'), None)
-    if predict_function:
-        # Loop through the expected inputs of the model and add them to the list
-        for input in predict_function['signature']['inputs']:
-            EXPECTED_MODEL_INPUTS.append(input['name'])
-
-
-    # Show expected inputs
-    expected_string = ''
-    for input in EXPECTED_MODEL_INPUTS:
-        expected_string = expected_string + (f"\n- {input}\n")
-
-    col2.markdown(f"""
-                <div style="overflow-y: scroll; height: 300px;">
-                {expected_string}
-                """, unsafe_allow_html=True)
-
-except Exception as e:
-    col2.write(f'Expected inputs not available for this model {e}')
-
-col3.subheader("Expected Outputs")
-try:
-    EXPECTED_MODEL_OUTPUTS = []
-    # Access the function where name == 'predict'
-    predict_function = next((func for func in user_data_json['snowpark_ml_data']['functions'] if func['name'] == 'PREDICT'), None)
-    if predict_function:
-        # Loop through the expected inputs of the model and add them to the list
-        for input in predict_function['signature']['outputs']:
-            EXPECTED_MODEL_OUTPUTS.append(input['name'])
-
+    # Column 1: Stats
+    with col1:
+        st.subheader("Stats")
+        
+        # Get MAPE metric (cached)
+        mape_value = get_model_metric(model_name, version, model_registry)
+        if mape_value is not None:
+            st.write(f"**MAPE:** {round(mape_value, 4)}")
+        else:
+            st.write("**MAPE:** Not available")
+        
+        # Show creation date
+        if model_details['success'] and model_details['date']:
+            st.write(f"**Created on:** {model_details['date']}")
+        else:
+            st.write("**Created on:** Not available")
     
-    # Show expected outputs
-    expected_output_string = ''
-    for input in EXPECTED_MODEL_OUTPUTS:
-        expected_output_string = expected_output_string + (f"\n- {input}\n")
+    with col2:
+        st.subheader("Expected Inputs")
+        
+        if model_details['success'] and model_details['inputs']:
+            inputs_text = "\n".join([f"• {inp}" for inp in model_details['inputs']])
+            st.markdown(f"""
+            <div style="overflow-y: auto; max-height: 300px; padding: 10px; border: 1px solid #ddd; border-radius: 5px;">
+            {inputs_text}
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.write("Expected inputs not available for this model")
 
-    col3.markdown(f"""
-                <div style="overflow-y: scroll; height: 300px;">
-                {expected_output_string}
-                """, unsafe_allow_html=True)
-    
-except Exception as e:
-    col3.write(f'Expected outputs not available for this model {e}')
+    with col3:
+        st.subheader("Expected Outputs")
+        
+        if model_details['success'] and model_details['outputs']:
+            outputs_text = "\n".join([f"• {out}" for out in model_details['outputs']])
+            st.markdown(f"""
+            <div style="overflow-y: auto; max-height: 300px; padding: 10px; border: 1px solid #ddd; border-radius: 5px;">
+            {outputs_text}
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.write("Expected outputs not available for this model")
