@@ -1,12 +1,12 @@
 - step:
-    name: snowflake-test-insurance-connection
+    name: test-insurance-connection
     image: python:3.12
     command:
       - pip install -r requirements.txt
       - python -m test_insurance_connection
 
 - step:
-    name: snowflake-load-insurance-data
+    name: load-insurance-data
     image: python:3.12
     command:
       - pip install -r requirements.txt
@@ -41,7 +41,7 @@
         type: integer
 
 - step:
-    name: snowflake-train-and-save-model
+    name: train-and-save-model
     image: python:3.12
     command:
       - pip install -r requirements.txt
@@ -69,7 +69,7 @@
         type: string
 
 - step:
-    name: snowflake-make-predictions
+    name: make-predictions
     image: python:3.12
     command:
       - pip install -r requirements.txt
@@ -101,7 +101,7 @@
         type: string
 
 - step:
-    name: snowflake-simulate-streamed-data
+    name: simulate-streamed-data
     image: python:3.12
     command:
       - pip install -r requirements.txt
@@ -133,7 +133,7 @@
         type: string
 
 - step:
-    name: snowflake-deploy-streamlit-app
+    name: deploy-streamlit-app
     image: python:3.12
     command:
       - pip install -r requirements.txt
@@ -164,23 +164,23 @@
 
 
 - pipeline:
-    name: insurance-training-pipeline
+    name: insurance-full-pipeline
     nodes:
       - name: load_data
         type: execution
-        step: snowflake-load-insurance-data
+        step: load-insurance-data
       - name: train
         type: execution
-        step: snowflake-train-and-save-model
+        step: train-and-save-model
       - name: pretend_to_stream_data
         type: execution
-        step: snowflake-simulate-streamed-data
+        step: simulate-streamed-data
       - name: make_predictions
         type: execution
-        step: snowflake-make-predictions
+        step: make-predictions
       - name: deploy_streamlit_app
         type: execution
-        step: snowflake-deploy-streamlit-app
+        step: deploy-streamlit-app
     edges:
       - [load_data.parameter.db_name, train.parameter.db_name]
       - [load_data.parameter.schema_name, train.parameter.schema_name]
@@ -191,6 +191,50 @@
       - [train.parameter.schema_name, pretend_to_stream_data.parameter.schema_name]
       - [train.parameter.warehouse_name, pretend_to_stream_data.parameter.warehouse_name]
       - [train.parameter.role, pretend_to_stream_data.parameter.role]
+      - [pretend_to_stream_data.parameter.db_name, make_predictions.parameter.db_name]
+      - [pretend_to_stream_data.parameter.schema_name, make_predictions.parameter.schema_name]
+      - [pretend_to_stream_data.parameter.warehouse_name, make_predictions.parameter.warehouse_name]
+      - [pretend_to_stream_data.parameter.role, make_predictions.parameter.role]
+      - [make_predictions.parameter.db_name, deploy_streamlit_app.parameter.db_name]
+      - [make_predictions.parameter.schema_name, deploy_streamlit_app.parameter.schema_name]
+      - [make_predictions.parameter.warehouse_name, deploy_streamlit_app.parameter.warehouse_name]
+      - [make_predictions.parameter.role, deploy_streamlit_app.parameter.role]
+
+
+- pipeline:
+    name: insurance-train-model
+    nodes:
+      - name: load_data
+        type: execution
+        step: load-insurance-data
+      - name: train
+        type: execution
+        step: train-and-save-model
+    edges:
+      - [load_data.parameter.db_name, train.parameter.db_name]
+      - [load_data.parameter.schema_name, train.parameter.schema_name]
+      - [load_data.parameter.warehouse_name, train.parameter.warehouse_name]
+      - [load_data.parameter.role, train.parameter.role]
+      - [load_data.parameter.train_db_name, train.parameter.source_table]
+      - [train.parameter.db_name, pretend_to_stream_data.parameter.db_name]
+      - [train.parameter.schema_name, pretend_to_stream_data.parameter.schema_name]
+      - [train.parameter.warehouse_name, pretend_to_stream_data.parameter.warehouse_name]
+      - [train.parameter.role, pretend_to_stream_data.parameter.role]
+
+
+- pipeline:
+    name: insurance-batch-inference
+    nodes:
+      - name: pretend_to_stream_data
+        type: execution
+        step: simulate-streamed-data
+      - name: make_predictions
+        type: execution
+        step: make-predictions
+      - name: deploy_streamlit_app
+        type: execution
+        step: deploy-streamlit-app
+    edges:
       - [pretend_to_stream_data.parameter.db_name, make_predictions.parameter.db_name]
       - [pretend_to_stream_data.parameter.schema_name, make_predictions.parameter.schema_name]
       - [pretend_to_stream_data.parameter.warehouse_name, make_predictions.parameter.warehouse_name]
