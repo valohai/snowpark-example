@@ -18,15 +18,19 @@
       - name: db_name
         optional: true
         type: string
+        default: INSURANCE
       - name: schema_name
         optional: true
+        default: ML_PIPE
         type: string
       - name: warehouse_name
         optional: true
         type: string
+        default: VH_DEV_WAREHOUSE
       - name: role
         optional: true
         type: string
+        default: VH_DEV
       - name: train_db_name
         default: SOURCE_OF_TRUTH
         optional: true
@@ -50,15 +54,19 @@
       - name: db_name
         optional: true
         type: string
+        default: INSURANCE
       - name: schema_name
         optional: true
         type: string
+        default: ML_PIPE
       - name: warehouse_name
         optional: true
         type: string
+        default: VH_DEV_WAREHOUSE
       - name: role
         optional: true
         type: string
+        default: VH_DEV
       - name: source_table
         default: SOURCE_OF_TRUTH
         optional: true
@@ -78,15 +86,19 @@
       - name: db_name
         optional: true
         type: string
+        default: INSURANCE
       - name: schema_name
         optional: true
         type: string
+        default: ML_PIPE
       - name: warehouse_name
         optional: true
         type: string
+        default: VH_DEV_WAREHOUSE
       - name: role
         optional: true
         type: string
+        default: VH_DEV
       - name: streamdb_name
         default: STREAM_ON_LANDING
         optional: true
@@ -110,15 +122,19 @@
       - name: db_name
         optional: true
         type: string
+        default: INSURANCE
       - name: schema_name
         optional: true
         type: string
+        default: ML_PIPE
       - name: warehouse_name
         optional: true
         type: string
+        default: VH_DEV_WAREHOUSE
       - name: role
         optional: true
         type: string
+        default: VH_DEV
       - name: incoming_data_db_name
         default: INCOMING_DATA_SOURCE
         optional: true
@@ -142,63 +158,69 @@
       - name: db_name
         optional: true
         type: string
+        default: INSURANCE
       - name: schema_name
         optional: true
         type: string
+        default: ML_PIPE
       - name: warehouse_name
         optional: true
         type: string
+        default: VH_DEV_WAREHOUSE
       - name: role
         optional: true
         type: string
+        default: VH_DEV
       - name: streamlit_image
         optional: false
         type: string
+        default: /vh_snowflake_db/public/vh_dev_repository/insurance_streamlit_v2:latest
       - name: compute_pool_name
         optional: false
         type: string
+        default: vh_dev_compute_pool
       - name: service_name
         default: InsuranceStreamlitApp
         optional: true
         type: string
 
 
-- pipeline:
-    name: insurance-full-pipeline
-    nodes:
-      - name: load_data
-        type: execution
-        step: load-insurance-data
-      - name: train
-        type: execution
-        step: train-and-save-model
-      - name: pretend_to_stream_data
-        type: execution
-        step: simulate-streamed-data
-      - name: make_predictions
-        type: execution
-        step: make-predictions
-      - name: deploy_streamlit_app
-        type: execution
-        step: deploy-streamlit-app
-    edges:
-      - [load_data.parameter.db_name, train.parameter.db_name]
-      - [load_data.parameter.schema_name, train.parameter.schema_name]
-      - [load_data.parameter.warehouse_name, train.parameter.warehouse_name]
-      - [load_data.parameter.role, train.parameter.role]
-      - [load_data.parameter.train_db_name, train.parameter.source_table]
-      - [train.parameter.db_name, pretend_to_stream_data.parameter.db_name]
-      - [train.parameter.schema_name, pretend_to_stream_data.parameter.schema_name]
-      - [train.parameter.warehouse_name, pretend_to_stream_data.parameter.warehouse_name]
-      - [train.parameter.role, pretend_to_stream_data.parameter.role]
-      - [pretend_to_stream_data.parameter.db_name, make_predictions.parameter.db_name]
-      - [pretend_to_stream_data.parameter.schema_name, make_predictions.parameter.schema_name]
-      - [pretend_to_stream_data.parameter.warehouse_name, make_predictions.parameter.warehouse_name]
-      - [pretend_to_stream_data.parameter.role, make_predictions.parameter.role]
-      - [make_predictions.parameter.db_name, deploy_streamlit_app.parameter.db_name]
-      - [make_predictions.parameter.schema_name, deploy_streamlit_app.parameter.schema_name]
-      - [make_predictions.parameter.warehouse_name, deploy_streamlit_app.parameter.warehouse_name]
-      - [make_predictions.parameter.role, deploy_streamlit_app.parameter.role]
+# - pipeline:
+#     name: insurance-full-pipeline
+#     nodes:
+#       - name: load_data
+#         type: execution
+#         step: load-insurance-data
+#       - name: train
+#         type: execution
+#         step: train-and-save-model
+#       - name: pretend_to_stream_data
+#         type: execution
+#         step: simulate-streamed-data
+#       - name: make_predictions
+#         type: execution
+#         step: make-predictions
+#       - name: deploy_streamlit_app
+#         type: execution
+#         step: deploy-streamlit-app
+#     edges:
+#       - [load_data.parameter.db_name, train.parameter.db_name]
+#       - [load_data.parameter.schema_name, train.parameter.schema_name]
+#       - [load_data.parameter.warehouse_name, train.parameter.warehouse_name]
+#       - [load_data.parameter.role, train.parameter.role]
+#       - [load_data.parameter.train_db_name, train.parameter.source_table]
+#       - [train.parameter.db_name, pretend_to_stream_data.parameter.db_name]
+#       - [train.parameter.schema_name, pretend_to_stream_data.parameter.schema_name]
+#       - [train.parameter.warehouse_name, pretend_to_stream_data.parameter.warehouse_name]
+#       - [train.parameter.role, pretend_to_stream_data.parameter.role]
+#       - [pretend_to_stream_data.parameter.db_name, make_predictions.parameter.db_name]
+#       - [pretend_to_stream_data.parameter.schema_name, make_predictions.parameter.schema_name]
+#       - [pretend_to_stream_data.parameter.warehouse_name, make_predictions.parameter.warehouse_name]
+#       - [pretend_to_stream_data.parameter.role, make_predictions.parameter.role]
+#       - [make_predictions.parameter.db_name, deploy_streamlit_app.parameter.db_name]
+#       - [make_predictions.parameter.schema_name, deploy_streamlit_app.parameter.schema_name]
+#       - [make_predictions.parameter.warehouse_name, deploy_streamlit_app.parameter.warehouse_name]
+#       - [make_predictions.parameter.role, deploy_streamlit_app.parameter.role]
 
 
 - pipeline:
